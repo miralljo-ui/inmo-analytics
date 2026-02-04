@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+pydantic>=2.0
+python-dotenv
+sqlalchemy
+psycopg2-binary
+geoalchemy2
+shapely
+pandas
