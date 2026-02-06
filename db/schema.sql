@@ -25,3 +25,6 @@ CREATE TABLE IF NOT EXISTS listings_agg (
     sample_size INT NOT NULL,
     source TEXT NOT NULL
 );
+
+CREATE INDEX IF NOT EXISTS idx_listings_agg_zone_period ON listings_agg(zone_id, period);
+CREATE INDEX IF NOT EXISTS idx_price_index_zone_period ON price_index(zone_id, period);

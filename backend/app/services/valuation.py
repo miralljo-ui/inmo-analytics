@@ -1,24 +1,35 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Tuple
+from datetime import date
 
+from fastapi import HTTPException, status
+from sqlalchemy.orm import Session
+
+from app.db.repository import (
+    ZoneDataNotFoundError,
+    ZoneNotFoundError,
+    get_zone_price_stats,
+)
 from app.schemas.valuation import ValuationRequest, ValuationResult
 
 
 @dataclass(frozen=True)
 class ZoneStats:
-    median_price_m2: float
-    iqr_low_m2: float
-    iqr_high_m2: float
+    mean_price_m2: float
+    p25_m2: float
+    p50_m2: float
+    p75_m2: float
 
 
-DEFAULT_STATS = ZoneStats(median_price_m2=2200.0, iqr_low_m2=1800.0, iqr_high_m2=2600.0)
-
-
-def _estimate_zone_stats(zona: str) -> ZoneStats:
-    _ = zona
-    return DEFAULT_STATS
+def _estimate_zone_stats(db: Session, zona: str, year: int) -> ZoneStats:
+    stats = get_zone_price_stats(db, zona, year)
+    return ZoneStats(
+        mean_price_m2=stats.mean_price_m2,
+        p25_m2=stats.p25_m2,
+        p50_m2=stats.p50_m2,
+        p75_m2=stats.p75_m2,
+    )
 
 
 def _apply_room_adjustment(base_m2: float, rooms: int | None) -> float:
@@ -41,16 +52,28 @@ def _apply_age_adjustment(base_m2: float, year_built: int | None) -> float:
     return base_m2
 
 
-def estimate_valuation(payload: ValuationRequest) -> ValuationResult:
-    stats = _estimate_zone_stats(payload.zona)
+def estimate_valuation(payload: ValuationRequest, db: Session) -> ValuationResult:
+    year = date.today().year
+    try:
+        stats = _estimate_zone_stats(db, payload.zona, year)
+    except ZoneNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Zona no encontrada: {exc.zone}",
+        ) from exc
+    except ZoneDataNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"No hay datos para la zona '{exc.zone}' en el año {exc.year}",
+        ) from exc
 
-    low_m2 = _apply_room_adjustment(stats.iqr_low_m2, payload.rooms)
+    low_m2 = _apply_room_adjustment(stats.p25_m2, payload.rooms)
     low_m2 = _apply_age_adjustment(low_m2, payload.year_built)
 
-    high_m2 = _apply_room_adjustment(stats.iqr_high_m2, payload.rooms)
+    high_m2 = _apply_room_adjustment(stats.p75_m2, payload.rooms)
     high_m2 = _apply_age_adjustment(high_m2, payload.year_built)
 
-    median_m2 = _apply_room_adjustment(stats.median_price_m2, payload.rooms)
+    median_m2 = _apply_room_adjustment(stats.p50_m2, payload.rooms)
     median_m2 = _apply_age_adjustment(median_m2, payload.year_built)
 
     low = low_m2 * payload.area_m2

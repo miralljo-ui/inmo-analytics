@@ -17,4 +17,4 @@ class ValuationResult(BaseModel):
     estimated_price_eur: float
     overvalued: bool
     score: float
-    model_version: str = "baseline-0.1"
+    model_version: str = "baseline-0.2"
